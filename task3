@@ -1,0 +1,67 @@
+const db = require("../db"); // підключення до тестової БД
+const UserRepository = require("../repositories/UserRepository");
+
+describe("UserRepository DB Tests", () => {
+
+  // Очищення таблиць перед кожним тестом
+  beforeEach(async () => {
+    await db("users").del();
+  });
+
+  // Закриття конекшну після всіх тестів
+  afterAll(async () => {
+    await db.destroy();
+  });
+
+  it("should create and read user (CRUD)", async () => {
+    const user = await UserRepository.create({
+      name: "Test User",
+      email: "test@example.com"
+    });
+
+    expect(user.id).toBeDefined();
+
+    const dbUser = await UserRepository.findById(user.id);
+    expect(dbUser.name).toBe("Test User");
+    expect(dbUser.email).toBe("test@example.com");
+  });
+
+  it("should enforce UNIQUE constraint on email", async () => {
+    await UserRepository.create({
+      name: "User1",
+      email: "unique@gmail.com"
+    });
+
+    await expect(
+      UserRepository.create({
+        name: "User2",
+        email: "unique@gmail.com"
+      })
+    ).rejects.toThrow();
+  });
+
+  it("should rollback transaction on error", async () => {
+    const trx = await db.transaction();
+
+    try {
+      await trx("users").insert({
+        name: "User OK",
+        email: "ok@example.com"
+      });
+
+      // викликаємо помилку (NOT NULL constraint)
+      await trx("users").insert({
+        name: null, // порушення NOT NULL
+        email: "fail@example.com"
+      });
+
+      await trx.commit();
+    } catch (err) {
+      await trx.rollback();
+    }
+
+    const users = await db("users");
+    expect(users.length).toBe(0); // транзакція скасована
+  });
+
+});
