@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>My App – Tasks</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 30px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    input {
+      display: block;
+      margin: 8px 0;
+      padding: 10px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 10px 15px;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+    #task-list li{
+      background: #fff;
+      padding: 8px;
+      margin-bottom: 5px;
+      border-radius: 4px;
+    }
+    .task-item{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .btn-small{
+      padding: 5px 10px;
+      font-size: 12px;
+      margin-left: 5px;
+      cursor: pointer;
+    }
+    .completed {
+      text-decoration: line-through;
+      color: gray;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Task Manager</h1>
+
+  <!-- AUTH SECTION -->
+  <section id="auth">
+    <h2>Реєстрація</h2>
+    <input id="reg-name" placeholder="Ім'я" />
+    <input id="reg-email" placeholder="Email" />
+    <input id="reg-password" placeholder="Пароль" type="password" />
+    <button id="btn-register">Створити акаунт</button>
+
+    <h2>Вхід</h2>
+    <input id="login-email" placeholder="Email" />
+    <input id="login-password" placeholder="Пароль" type="password" />
+    <button id="btn-login">Увійти</button>
+
+    <p id="auth-message" style="color: red; font-weight: bold;"></p>
+  </section>
+
+  <!-- TASKS SECTION -->
+  <section id="tasks" style="display:none;">
+    <h2>Ваші завдання</h2>
+
+    <input id="task-title" placeholder="Нова задача..." />
+    <button id="btn-add-task">Додати</button>
+
+    <ul id="task-list"></ul>
+
+    <br />
+    <button id="btn-logout">Вийти</button>
+  </section>
+
+  <script>
+    let token = null;
+
+    // Утіліта для запитів
+    async function api(path, options = {}) {
+      const headers = options.headers || {};
+      
+      headers["Content-Type"] = "application/json";
+
+      if (token) {
+        headers["Authorization"] = "Bearer " + token;
+      }
+
+      const res = await fetch("/api" + path, {
+        ...options,
+        headers
+      });
+
+      let data = {};
+      try {
+        data = await res.json();
+      } catch {}
+
+      if (!res.ok) throw new Error(data.error || "Помилка");
+
+      return data;
+    }
+
+    // ------------------------
+    // AUTH LOGIC
+    // ------------------------
+
+    document.getElementById("btn-register").onclick = async () => {
+      try {
+        const name = document.getElementById("reg-name").value;
+        const email = document.getElementById("reg-email").value;
+        const password = document.getElementById("reg-password").value;
+
+        await api("/auth/register", {
+          method: "POST",
+          body: JSON.stringify({ name, email, password })
+        });
+
+        document.getElementById("auth-message").textContent =
+          "Реєстрація успішна. Можете увійти.";
+
+      } catch (err) {
+        document.getElementById("auth-message").textContent = err.message;
+      }
+    };
+
+    document.getElementById("btn-login").onclick = async () => {
+      try {
+        const email = document.getElementById("login-email").value;
+        const password = document.getElementById("login-password").value;
+
+        const result = await api("/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email, password })
+        });
+
+        token = result.token;
+
+        // Показуємо секцію tasks
+        document.getElementById("auth").style.display = "none";
+        document.getElementById("tasks").style.display = "block";
+
+        loadTasks();
+
+      } catch (err) {
+        document.getElementById("auth-message").textContent = err.message;
+      }
+    };
+
+    // ------------------------
+    // TASKS LOGIC
+    // ------------------------
+
+    async function loadTasks() {
+      const tasks = await api("/tasks");
+      const list = document.getElementById("task-list");
+      list.innerHTML = "";
+
+      tasks.forEach((task) => {
+        const li = document.createElement("li");
+        li.className = "task-item";
+
+        const titleSpan = document.createElement("span");
+        titleSpan.textContent = task.title;
+        if (task.completed) titleSpan.classList.add("completed");
+
+        const btnEdit = document.createElement("button");
+        btnEdit.textContent = "Редагувати";
+        btnEdit.className = "btn-small";
+        btnEdit.onclick = async () => {
+          const newTitle = prompt("Нова назва:", task.title);
+          if (!newTitle) return;
+
+          await api(`/tasks/${task.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              title: newTitle,
+              completed: task.completed
+            })
+          });
+
+          loadTasks();
+        };
+
+        const btnToggle = document.createElement("button");
+        btnToggle.textContent = task.completed ? "☑" : "⬜";
+        btnToggle.className = "btn-small";
+        btnToggle.onclick = async () => {
+          await api(`/tasks/${task.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              title: task.title,
+              completed: !task.completed
+            })
+          });
+          loadTasks();
+        };
+
+        const btnDelete = document.createElement("button");
+        btnDelete.textContent = "Видалити";
+        btnDelete.className = "btn-small";
+        btnDelete.onclick = async () => {
+          await api(`/tasks/${task.id}`, {
+            method: "DELETE"
+          });
+          loadTasks();
+        };
+
+        li.appendChild(titleSpan);
+        li.appendChild(btnToggle);
+        li.appendChild(btnEdit);
+        li.appendChild(btnDelete);
+        list.appendChild(li);
+      });
+    }
+
+    document.getElementById("btn-add-task").onclick = async () => {
+      try {
+        const title = document.getElementById("task-title").value;
+        await api("/tasks", {
+          method: "POST",
+          body: JSON.stringify({ title })
+        });
+        document.getElementById("task-title").value = "";
+        loadTasks();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    document.getElementById("btn-logout").onclick = () => {
+      token = null;
+      document.getElementById("tasks").style.display = "none";
+      document.getElementById("auth").style.display = "block";
+    };
+  </script>
+</body>
+</html>
